@@ -1,0 +1,11 @@
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\obj\Debug\CleanSweep.csproj.AssemblyReference.cache
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\obj\Debug\CleanSweep.Properties.Resources.resources
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\obj\Debug\CleanSweep.csproj.GenerateResource.cache
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\obj\Debug\CleanSweep.csproj.CoreCompileInputs.cache
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\obj\Debug\CleanSweep.Form1.resources
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\bin\Debug\CleanSweep.exe.config
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\bin\Debug\CleanSweep.exe
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\bin\Debug\CleanSweep.pdb
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\obj\Debug\CleanSweep.exe
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\obj\Debug\CleanSweep.pdb
+C:\Users\Renat\source\repos\CleanSweep\CleanSweep\obj\Debug\CleanSweep.exe.config
