@@ -4,6 +4,8 @@ using System.Drawing;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Security.Principal;
+using System.Linq;
 
 namespace CleanSweep
 {
@@ -20,6 +22,8 @@ namespace CleanSweep
         private NotifyIcon notifyIcon;
         private long totalBytesDeleted = 0;
 
+        private const string GitHubUrl = "https://github.com/renatus777rr";
+
         public Form1()
         {
             this.Text = "CleanSweep";
@@ -29,7 +33,7 @@ namespace CleanSweep
 
             titleLabel = new Label
             {
-                Text = "CleanSweep (ALPHA)",
+                Text = "CleanSweep (BETA)",
                 Font = new Font("Segoe UI", 16, FontStyle.Bold),
                 AutoSize = true,
                 Location = new Point(130, 20)
@@ -38,7 +42,7 @@ namespace CleanSweep
             optionsList = new CheckedListBox
             {
                 Location = new Point(50, 70),
-                Size = new Size(400, 100)
+                Size = new Size(400, 120)
             };
             optionsList.Items.AddRange(new object[]
             {
@@ -46,6 +50,7 @@ namespace CleanSweep
                 "Clean Documents",
                 "Clean Cache",
                 "Clean Windows Update Files",
+                "Clean Temporary Files",
                 "Chkdsk check (Advanced)"
             });
 
@@ -81,11 +86,14 @@ namespace CleanSweep
 
             footerLabel = new Label
             {
-                Text = "By renatus777rr on github",
+                Text = "By renatus777rr on GitHub",
                 AutoSize = true,
                 Location = new Point(10, 490),
-                ForeColor = Color.DarkBlue
+                ForeColor = Color.DarkBlue,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9, FontStyle.Underline)
             };
+            footerLabel.Click += FooterLabel_Click;
 
             darkModeToggle = new CheckBox
             {
@@ -109,6 +117,33 @@ namespace CleanSweep
             Controls.Add(logBox);
             Controls.Add(footerLabel);
             Controls.Add(darkModeToggle);
+
+            CheckAdminPrivileges();
+        }
+        private void FooterLabel_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(GitHubUrl) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not open link: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private void CheckAdminPrivileges()
+        {
+            if (!IsAdministrator())
+            {
+                logBox.AppendText("Warning: Application is not running as Administrator." + Environment.NewLine);
+                logBox.AppendText("System cleaning tasks (e.g., Windows Update, Chkdsk) may fail due to 'Access Denied'." + Environment.NewLine);
+            }
+        }
+
+        private bool IsAdministrator()
+        {
+            return (new WindowsPrincipal(WindowsIdentity.GetCurrent()))
+                    .IsInRole(WindowsBuiltInRole.Administrator);
         }
 
         private async void StartButton_Click(object sender, EventArgs e)
@@ -127,17 +162,20 @@ namespace CleanSweep
             totalBytesDeleted = 0;
 
             int step = Math.Max(1, 100 / total);
-            foreach (var item in optionsList.CheckedItems)
+            var checkedItems = optionsList.CheckedItems.Cast<object>().ToList();
+
+            foreach (var item in checkedItems)
             {
                 string taskName = item.ToString();
-                statusLabel.Text = $"{progressBar.Value}% ({taskName}...)";
-                logBox.AppendText($"Starting: {taskName}{Environment.NewLine}");
+
+                statusLabel.Invoke(new Action(() => statusLabel.Text = $"{progressBar.Value}% ({taskName}...)"));
+                logBox.Invoke(new Action(() => logBox.AppendText($"Starting: {taskName}{Environment.NewLine}")));
 
                 await Task.Run(() => PerformTask(taskName));
 
-                progressBar.Value = Math.Min(progressBar.Value + step, 100);
-                statusLabel.Text = $"{progressBar.Value}% ({taskName} done)";
-                logBox.AppendText($"Completed: {taskName}{Environment.NewLine}");
+                progressBar.Invoke(new Action(() => progressBar.Value = Math.Min(progressBar.Value + step, 100)));
+                statusLabel.Invoke(new Action(() => statusLabel.Text = $"{progressBar.Value}% ({taskName} done)"));
+                logBox.Invoke(new Action(() => logBox.AppendText($"Completed: {taskName}{Environment.NewLine}")));
             }
 
             progressBar.Value = 100;
@@ -170,6 +208,9 @@ namespace CleanSweep
                     case "Clean Windows Update Files":
                         CleanFolder(@"C:\Windows\SoftwareDistribution\Download");
                         break;
+                    case "Clean Temporary Files":
+                        CleanTempFiles();
+                        break;
                     case "Chkdsk check (Advanced)":
                         RunChkdsk();
                         break;
@@ -184,15 +225,40 @@ namespace CleanSweep
             }
         }
 
+        private void CleanTempFiles()
+        {
+            string userTempPath = Path.GetTempPath();
+            CleanFolderInternal(userTempPath, "User Temp");
+
+            // System temp path is usually C:\Windows\Temp, accessible via Environment variable, but requires Admin rights.
+            string systemTempPath = Environment.GetEnvironmentVariable("windir") + @"\Temp";
+            CleanFolderInternal(systemTempPath, "System Temp");
+        }
+
         private bool Confirm(string folderName)
         {
-            var result = MessageBox.Show($"Are you sure to clean {folderName}?", "Confirmation", MessageBoxButtons.YesNo);
+            var result = MessageBox.Show($"Are you sure you want to clean all contents of the {folderName} folder?", "Confirmation", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             return result == DialogResult.Yes;
         }
 
         private void CleanFolder(string path)
         {
-            if (!Directory.Exists(path)) return;
+            CleanFolderInternal(path, new DirectoryInfo(path).Name);
+        }
+
+        private void CleanFolderInternal(string path, string name)
+        {
+            logBox.Invoke(new Action(() =>
+            {
+                logBox.AppendText($"  Processing folder '{name}' at: {path}{Environment.NewLine}");
+            }));
+
+            if (!Directory.Exists(path))
+            {
+                logBox.Invoke(new Action(() => logBox.AppendText($"  Path does not exist: {path}{Environment.NewLine}")));
+                return;
+            }
+
             foreach (var file in Directory.GetFiles(path))
             {
                 try
@@ -201,8 +267,16 @@ namespace CleanSweep
                     File.Delete(file);
                     totalBytesDeleted += size;
                 }
-                catch { }
+                catch (UnauthorizedAccessException ex)
+                {
+                    logBox.Invoke(new Action(() => logBox.AppendText($"    Access Denied to file {Path.GetFileName(file)}. Run as Admin. ({ex.GetType().Name}){Environment.NewLine}")));
+                }
+                catch (Exception ex)
+                {
+                    logBox.Invoke(new Action(() => logBox.AppendText($"    Failed to delete file {Path.GetFileName(file)}: {ex.Message}{Environment.NewLine}")));
+                }
             }
+
             foreach (var dir in Directory.GetDirectories(path))
             {
                 try
@@ -212,7 +286,18 @@ namespace CleanSweep
                     Directory.Delete(dir, true);
                     totalBytesDeleted += size;
                 }
-                catch { }
+                catch (UnauthorizedAccessException ex)
+                {
+                    logBox.Invoke(new Action(() => logBox.AppendText($"    Access Denied to directory {Path.GetFileName(dir)}. Run as Admin. ({ex.GetType().Name}){Environment.NewLine}")));
+                }
+                catch (IOException ex)
+                {
+                    logBox.Invoke(new Action(() => logBox.AppendText($"    Directory is in use/not empty {Path.GetFileName(dir)}: {ex.Message}{Environment.NewLine}")));
+                }
+                catch (Exception ex)
+                {
+                    logBox.Invoke(new Action(() => logBox.AppendText($"    Failed to delete directory {Path.GetFileName(dir)}: {ex.Message}{Environment.NewLine}")));
+                }
             }
         }
 
@@ -223,65 +308,91 @@ namespace CleanSweep
             {
                 foreach (var file in dir.GetFiles("*", SearchOption.AllDirectories))
                 {
-                    size += file.Length;
+                    try
+                    {
+                        size += file.Length;
+                    }
+                    catch (Exception) { }
                 }
             }
-            catch { }
+            catch (Exception) { }
             return size;
         }
 
         private string FormatSize(long bytes)
         {
-            if (bytes > 1024 * 1024 * 1024)
-                return $"{bytes / (1024 * 1024 * 1024)} GB";
-            else if (bytes > 1024 * 1024)
-                return $"{bytes / (1024 * 1024)} MB";
-            else if (bytes > 1024)
-                return $"{bytes / 1024} KB";
-            else
-                return $"{bytes} bytes";
+            string[] suffixes = { "bytes", "KB", "MB", "GB", "TB" };
+            int i = 0;
+            double dblBytes = bytes;
+
+            while (dblBytes >= 1024 && i < suffixes.Length - 1)
+            {
+                dblBytes /= 1024;
+                i++;
+            }
+
+            return $"{dblBytes:0.##} {suffixes[i]}";
         }
 
         private void RunChkdsk()
         {
             try
             {
-                ProcessStartInfo psi = new ProcessStartInfo("chkdsk.exe", "C:")
+                if (!IsAdministrator())
+                {
+                    logBox.Invoke(new Action(() => logBox.AppendText("  Chkdsk requires Administrator privileges to run effectively." + Environment.NewLine)));
+                }
+
+                ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/C chkdsk C:")
                 {
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
+                    RedirectStandardError = true,
                     CreateNoWindow = true
                 };
                 using (Process p = Process.Start(psi))
                 {
                     string output = p.StandardOutput.ReadToEnd();
+                    string error = p.StandardError.ReadToEnd();
+                    p.WaitForExit();
+
                     logBox.Invoke(new Action(() =>
                     {
-                        logBox.AppendText(output + Environment.NewLine);
+                        logBox.AppendText("  --- Chkdsk Output ---" + Environment.NewLine);
+                        logBox.AppendText(output);
+                        if (!string.IsNullOrWhiteSpace(error))
+                        {
+                            logBox.AppendText("  --- Chkdsk Error ---" + Environment.NewLine);
+                            logBox.AppendText(error + Environment.NewLine);
+                        }
+                        logBox.AppendText("  --- End Chkdsk ---" + Environment.NewLine);
                     }));
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                logBox.Invoke(new Action(() => logBox.AppendText($"  Failed to run Chkdsk: {ex.Message}{Environment.NewLine}")));
+            }
         }
 
         private void DarkModeToggle_CheckedChanged(object sender, EventArgs e)
         {
             if (darkModeToggle.Checked)
             {
-                this.BackColor = Color.Black;
+                this.BackColor = Color.FromArgb(30, 30, 30); // Dark Gray background
 
                 titleLabel.ForeColor = Color.White;
                 statusLabel.ForeColor = Color.White;
                 footerLabel.ForeColor = Color.LightGray;
 
-                logBox.BackColor = Color.Black;
+                logBox.BackColor = Color.FromArgb(50, 50, 50); // Slightly lighter log background
                 logBox.ForeColor = Color.White;
 
                 startButton.BackColor = Color.DimGray;
                 startButton.ForeColor = Color.White;
 
                 darkModeToggle.ForeColor = Color.White;
-                optionsList.BackColor = Color.Black;
+                optionsList.BackColor = Color.FromArgb(50, 50, 50);
                 optionsList.ForeColor = Color.White;
             }
             else
